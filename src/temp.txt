@@ -1,0 +1,15 @@
+String status = "maintain";
+    while(1)
+    {
+        Mat image = ardrone.getImage();
+        alt = ardrone.getAltitude();
+        delta = 1.0-alt;
+        sd += abs(delta);
+        if (tc > 3 && abs(delta-td) >= 0.08) 
+        {
+            printf("%.7d\n", (delta));
+            double avd = sd/dc;
+            printf("%.7d\n", (avd));
+            if(avd <= 0.05) break;
+            else ardrone.move3D(0.0, 0.0, delta, 0.0), tc = 0, td = delta, sd = 0, dc = 0;
+        };
