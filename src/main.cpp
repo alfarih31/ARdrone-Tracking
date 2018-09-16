@@ -25,6 +25,8 @@ double cd = 67.05;
 double ms = 0.83;
 double cs = 0.33;
 double pxd = 3158.16;
+
+// Arguments Flag
 bool human = false, gray = false;
 
 // Init Header
@@ -290,7 +292,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         full_image.copyTo(last_full_image);
 
         bool ok = false;
-        int fails = 0, n = 0;
+        int _show = 0, _ok = 0, n = 0;
         double delay = 1, dpd, dl, sum = 0.0;
         vector<double> x_target = {44.0, 46.5, 48.0}, dr;
     while(1)
@@ -303,68 +305,72 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         imshow("LIVE", ff_image);
         double blurry = calculate_blur(ff_image);
         cout <<"TRACKING" << "  |  Blurry: " << blurry << endl;
-        if(!ff_image.empty() && blurry >= blur_t)
+        if(blurry >= blur_t)
         {
-            // fastNlMeansDenoisingColored(full_image, full_image, 8.0, 3, 7, 21);
-            // crop_image(full_image, detected_target, target_pos);
-            ok = tracker -> update(ff_image, target_pos);
-            if( 0 <= target_pos.x &&
-                0 <= target_pos.width &&
-                target_pos.x + target_pos.width <= ff_image.cols &&
-                0 <= target_pos.y &&
-                0 <= target_pos.height &&
-                target_pos.y + target_pos.height <= ff_image.rows) crop_image2d(ff_image, detected_target, target_pos);
-            bool show = image_matching(detected_target, descriptors_target);
-            if(show && ok)
+            try
             {
-                n++;
-                sum += target_pos.width;
-                if(n >= 5)
+                ok = tracker -> update(ff_image, target_pos);
+                if(ok)
                 {
-                    //Save last detected image
-                    ff_image.copyTo(last_full_image);
-                    last_target = target_pos;
-
-                    double avg_width = sum/n;
-                    calculate_distance(avg_width, dpd, dl, dr, x_target);
-                    cout << "D pd:" << dpd << " | D dl:" << dl << endl;
-                    if(dr.size()>0)
+                    crop_image2d(ff_image, detected_target, target_pos);
+                    bool show = image_matching(detected_target, descriptors_target);
+                    if(show)
                     {
-                        for(int i = 0; i <= dr.size(); i++)
+                        n++;
+                        sum += target_pos.width;
+                        if(n >= 5)
                         {
-                            cout << "D r (" << x_target[i] << "): " << dr[i] << endl;
+                            //Save last detected image
+                            ff_image.copyTo(last_full_image);
+                            last_target = target_pos;
+
+                            double avg_width = sum/n;
+                            calculate_distance(avg_width, dpd, dl, dr, x_target);
+                            cout << "D pd:" << dpd << " | D dl:" << dl << endl;
+                            if(dr.size()>0)
+                            {
+                                for(int i = 0; i <= dr.size(); i++)
+                                {
+                                    cout << "D r (" << x_target[i] << "): " << dr[i] << endl;
+                                }
+                            }
+                            double dpxd = pxd/avg_width;
+                            {
+                                ostringstream buf;
+                                if(!human) buf << "D pd:" << dpd << " || D dl:" << dl << " || Dpxd:" << dpxd;
+                                else buf    << "D(" << x_target[0] << "): " << dr[0]
+                                            << " | D(" << x_target[1] << "): " << dr[1]
+                                            << " | D(" << x_target[2] << "): " << dr[2];
+                                //int baseline = 0;
+                                //Size textsize = getTextSize(buf.str(), FONT_HERSHEY_PLAIN, 2.0, 1, &baseline);
+                                //baseline += 1;
+                                putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 0, 255), 1, LINE_AA);
+                                dr.clear();
+                            }
+
+                            rectangle(ff_image, target_pos, Scalar(0, 255, 0), 1, 1 );
+                            imshow("TRACKING", ff_image);
+                            n = 0;
+                            sum = 0.0;
                         }
                     }
-                    double dpxd = pxd/avg_width;
-                    {
-                        ostringstream buf;
-                        if(!human) buf << "D pd:" << dpd << " || D dl:" << dl << " || Dpxd:" << dpxd;
-                        else buf    << "D(" << x_target[0] << "): " << dr[0]
-                                    << " | D(" << x_target[1] << "): " << dr[1]
-                                    << " | D(" << x_target[2] << "): " << dr[2];
-                        //int baseline = 0;
-                        //Size textsize = getTextSize(buf.str(), FONT_HERSHEY_PLAIN, 2.0, 1, &baseline);
-                        //baseline += 1;
-                        putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 0, 255), 1, LINE_AA);
-                        dr.clear();
-                    }
-
-                    rectangle(ff_image, target_pos, Scalar(0, 255, 0), 1, 1 );
-                    imshow("TRACKING", ff_image);
-                    n = 0;
-                    sum = 0.0;
+                };
+                if(!ok) _ok++;
+                if(_ok > 3)
+                {
+                    cout << "RE-INIT" << endl;
+                    Mat last_detected = last_full_image(last_target);
+                    extract_target(last_detected, descriptors_target);
+                    if(descriptors_target.empty()) return;
+                    tracker = TrackerMedianFlow::create();
+                    tracker -> init(last_full_image, last_target);
+                    _ok = 0;
                 }
             }
-            else fails++;
-            if(fails >= 3)
+            catch (exception)
             {
-                cout << "RE-INIT" << endl;
-                Mat last_detected = last_full_image(last_target);
-                extract_target(last_detected, descriptors_target);
-                if(descriptors_target.empty()) return;
-                tracker = TrackerMedianFlow::create();
-                tracker -> init(last_full_image, last_target);
-                fails = 0;
+                _ok++;
+                continue;
             }
         }
         t = (((double)getTickCount() - t)*1000)/getTickFrequency();

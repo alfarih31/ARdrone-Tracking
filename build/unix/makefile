@@ -20,12 +20,13 @@ OBJS          = ../../src/ardrone/ardrone.o \
                 ../../src/ardrone/version.o \
                 ../../src/ardrone/video.o   \
                 ../../src/main.o
-PROGRAM       = LALALAL.a
 
-$(PROGRAM):     $(OBJS)
+# Change the variable NAME to desired name's of programs
+NAME         = ARDroneMF6.a
+$(NAME):     $(OBJS)
 		$(CXX) $(OBJS) -o $(PROGRAM) $(CXXFLAGS) $(LDFLAGS) $(LIBS) 
 
-clean:;         rm -f *.o *~ $(PROGRAM) $(OBJS)
+clean:;         rm -f *.o *~ $(NAME) $(OBJS)
 
-install:        $(PROGRAM)
-		install -s $(PROGRAM) $(DEST)
+install:        $(NAME)
+		install -s $(NAME) $(DEST)
