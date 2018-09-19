@@ -24,7 +24,7 @@ OBJS          = ../../src/ardrone/ardrone.o \
 # Change the variable NAME to desired name's of programs
 NAME         = ARDroneMF6.a
 $(NAME):     $(OBJS)
-		$(CXX) $(OBJS) -o $(PROGRAM) $(CXXFLAGS) $(LDFLAGS) $(LIBS) 
+		$(CXX) $(OBJS) -o $(NAME) $(CXXFLAGS) $(LDFLAGS) $(LIBS) 
 
 clean:;         rm -f *.o *~ $(NAME) $(OBJS)
 

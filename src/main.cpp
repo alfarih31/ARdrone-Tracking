@@ -1,4 +1,5 @@
 #include "ardrone/ardrone.h"
+#include "nms.h"
 #include "opencv2/objdetect/objdetect.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/imgcodecs/imgcodecs.hpp"
@@ -12,8 +13,8 @@ using namespace cv::xfeatures2d;
 
 int minHessian = 600;
 double kp = 0.1;
-double ki = 0.5;
-double kd = 0.01;
+double ki = 0.05;
+double kd = 0.0;
 double blur_t=0, match_t=0;
 
 // Camera Const
@@ -134,7 +135,7 @@ void calibrate_camera(ARDrone &ardrone)
         //HOG Processing
         if (found.size() >= 1)
         {
-            for(int i=0; i <= found.size(); i++)
+            for(int i=0; i < found.size(); i++)
             {
                 Rect r = found[i];
                 double w = r.width;
@@ -177,7 +178,6 @@ void maintain_alt(ARDrone& ardrone)
     {
         char c = (char)waitKey(33);
         double alt = ardrone.getAltitude();
-
         double dt = (getTickCount() - temp_t)/getTickFrequency();
         temp_t = getTickCount();
         double err = 1.0 - alt;
@@ -186,12 +186,14 @@ void maintain_alt(ARDrone& ardrone)
         double der_err = (err - prev_err)/dt;
         double prev_err = err;
 
-        if (fabs(err <= 0.01)) break;
         double vz = kp * err + ki * int_err + kd * der_err;
         ardrone.move3D(0.0, 0.0, vz, 0.0);
         // Get Image, Display Image, and Draw
             image = ardrone.getImage();
+            ostringstream buf;
+            buf << alt;
             putText(image, status, Point((image.rows/2),(image.cols/2)), FONT_HERSHEY_PLAIN, 1.0, Scalar(0, 0, 255), 1, LINE_AA);
+            putText(image, buf.str(), Point((image.rows/4),(image.cols/4)), FONT_HERSHEY_PLAIN, 1.0, Scalar(0, 0, 255), 1, LINE_AA);
             imshow("LIVE", image);
         
         // Failsafe
@@ -299,9 +301,9 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
     {
         char c = (char)waitKey(delay);
         full_image = ardrone.getImage();
-        undistort(full_image, ff_image, cameraMat, distCoefs);
-
         double t = (double)getTickCount();
+
+        undistort(full_image, ff_image, cameraMat, distCoefs);
         imshow("LIVE", ff_image);
         double blurry = calculate_blur(ff_image);
         cout <<"TRACKING" << "  |  Blurry: " << blurry << endl;
@@ -354,8 +356,8 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                             sum = 0.0;
                         }
                     }
-                };
-                if(!ok) _ok++;
+                }
+                else _ok++;
                 if(_ok > 3)
                 {
                     cout << "RE-INIT" << endl;
@@ -387,13 +389,14 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
     double delay = 1, dpd, dl;
     vector<double> x_target = {400, 425, 465, 480}, dr;
     bool done = false;
-    vector<Rect> found;
+    vector<Rect> found, found_nms;
 
     // Initiate HOG
     HOGDescriptor hog;
     hog.setSVMDetector(HOGDescriptor::getDefaultPeopleDetector());
 
-    while(1){
+    while(1)
+    {
         char c = (char)waitKey(delay);
         double t = (double)getTickCount();
         // Get Image
@@ -408,13 +411,12 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
         if(blurry >= blur_t) hog_detecting(hog, flat_image, &found);
         cout << "  |  Found object: " << found.size();
         //HOG Processing
-        if(found.size() != 0)
-        {
-            for (int i = 0; i <= found.size(); i++)
+            nms(found, found_nms, 0.3f, 1);
+            for(int i = 0; i < found_nms.size(); i++)
             {
-                Rect2d r = found[i];
-                double h = r.height;
+                Rect2d r = found_nms[i];
                 double w = r.width;
+                double h = r.height;
                 double ratio = h/w;
                 if (ratio >= 1.61 && ratio <= 1.99) // Average Ratio of human body
                 {
@@ -442,24 +444,28 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                     }
                 };
             }
-        }
 
         imshow("LIVE", flat_image);
 
         if(done) break;
+        else ardrone.move(0.0, 0.0, 1.0);
+
+        waitKey(100);
+        ardrone.move(0.0, 0.0, 0.0);
 
         found.clear();
+        found_nms.clear();
 
         t = (((double)getTickCount() - t)*1000)/getTickFrequency();
         delay = 33.0 - t;
         if(delay < 0) delay = 2;
 
         // Failsafe
-        if (c == 27)
-        {
-            target.release();
-            break;
-        };
+            if (c == 27)
+            {
+                target.release();
+                break;
+            };
     }        
     return;
 }
@@ -470,11 +476,10 @@ void manual_control(ARDrone& ardrone)
     Mat target, full_image, image;
     Rect2d target_pos;
     String status = "manual";
-    bool new_key = false;
-
+    bool new_key = false, sent = false;
     while(1){
         // Key input
-        int key = waitKey(33);
+        int key = (int)waitKey(33);
         if (key == 0x1b) break;
 
         // Get Image
@@ -488,22 +493,38 @@ void manual_control(ARDrone& ardrone)
             };
             // Hover movement
                 double vx = 0.0, vy = 0.0, vr = 0.0, vz = 0.0;
-                if (key == 'i' || key == CV_VK_UP) vx = 1.0;
-                if (key == 'k' || key == CV_VK_DOWN) vx = -1.0;
-                if (key == 'u' || key == CV_VK_LEFT) vr =  1.0;
-                if (key == 'o' || key == CV_VK_RIGHT) vr = -1.0;
-                if (key == 'j') vy =  1.0;
-                if (key == 'l') vy = -1.0;
-                if (key == 'q') vz =  1.0;
-                if (key == 'a') vz = -1.0;
-                ardrone.move3D(vx, vy, vz, vr);
+                if (key == 'i') vx = 1.0, new_key = true;
+                else if (key == 'k') vx = -1.0, new_key = true;
+                else if (key == 'u') vr =  1.0, new_key = true;
+                else if (key == 'o') vr = -1.0, new_key = true;
+                else if (key == 'j') vy =  1.0, new_key = true;
+                else if (key == 'l') vy = -1.0, new_key = true;
+                else if (key == 'q') vz =  1.0, new_key = true;
+                else if (key == 'a') vz = -1.0, new_key = true;
+                else if (key == -1)
+                {
+                    if(sent) 
+                    {
+                        cout << "ZERO" << vx << vy << vz <<vr << endl;
+                        ardrone.move3D(vx, vy, vz, vr);
+                        sent = false;
+                        new_key = false;
+                    };
+                    ardrone.update();
+                };
 
+                if(!sent && new_key)
+                {
+                    ardrone.move3D(vx, vy, vz, vr);
+                    cout << "SENT"<< vx << vy << vz <<vr;
+                    sent = true;
+                };
         // Change camera
             static int mode = 0;
             if (key == 'c') ardrone.setCamera(++mode % 4);
 
         // Display the image and Draw
-            putText(image, status, Point((image.rows/2),(image.cols/2)), FONT_HERSHEY_PLAIN, 1.0, Scalar(0, 0, 255), 1, LINE_AA);
+            putText(image, status, Point((image.rows/2),(image.cols/2)), FONT_HERSHEY_PLAIN, 1.5, Scalar(0, 0, 255), 1, LINE_AA);
             imshow("LIVE", image);
 
         // Switch Control
@@ -538,7 +559,6 @@ int main( int argc, char* argv[] )
             else if (arg ==  "-g") gray = true;
         }
         cout << "Received Params:\n" << "match_t: " << match_t << "  |  blur_t: " << blur_t << endl; 
-    
     // Initialize DistCoefs, and Camera Mat
         if(calibfile == " ") return 1;
         FileStorage fs;

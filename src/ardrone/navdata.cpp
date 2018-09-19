@@ -53,7 +53,7 @@ int ARDrone::initNavdata(void)
         if (mutexCommand) pthread_mutex_lock(mutexCommand);
         sockCommand.sendf("AT*CONFIG_IDS=%d,\"%s\",\"%s\",\"%s\"\r", ++seq, ARDRONE_SESSION_ID, ARDRONE_PROFILE_ID, ARDRONE_APPLOCATION_ID);
         //sockCommand.sendf("AT*CONFIG=%d,\"general:navdata_demo\",\"TRUE\"\r", ++seq);
-        sockCommand.sendf("AT*CONFIG=%d,\"general:navdata_demo\",\"FALSE\"\r", ++seq);
+        sockCommand.sendf("AT*CONFIG=%d,\"general:navdata_demo\",\"TRUE\"\r", ++seq);
         if (mutexCommand) pthread_mutex_unlock(mutexCommand);
         msleep(100);
 
@@ -65,7 +65,7 @@ int ARDrone::initNavdata(void)
         // Disable BOOTSTRAP mode
         if (mutexCommand) pthread_mutex_lock(mutexCommand);
         //sockCommand.sendf("AT*CONFIG=%d,\"general:navdata_demo\",\"TRUE\"\r", ++seq);
-        sockCommand.sendf("AT*CONFIG=%d,\"general:navdata_demo\",\"FALSE\"\r", ++seq);
+        sockCommand.sendf("AT*CONFIG=%d,\"general:navdata_demo\",\"TRUE\"\r", ++seq);
         if (mutexCommand) pthread_mutex_unlock(mutexCommand);
 
         // Send ACK
