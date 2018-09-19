@@ -97,11 +97,13 @@ void calculate_distance(double a, double &pdpd, double &pdl, vector<double> &pdr
     // Calculate dl
         pdl = (md*a + cd)*0.67;
     // Calculate dr;
-        if(x_target.size() == 0) return;
-        for(int i = 0; i < x_target.size(); i++)
+        if(human)
         {
-            double cdr = (((640*x_target[i])/a) - cs)/ms;
-            pdr.push_back(cdr);
+            for(int i = 0; i < x_target.size(); i++)
+            {
+                double cdr = (((640*x_target[i])/a) - cs)/ms;
+                pdr.push_back(cdr);
+            }
         }
 }
 
@@ -339,14 +341,16 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                             double dpxd = pxd/avg_width;
                             {
                                 ostringstream buf;
-                                if(!human) buf << "D pd:" << dpd << " || D dl:" << dl << " || Dpxd:" << dpxd;
+                                if(!human) buf  << "D pd:" << setprecision(3) << dpd 
+                                                << " cm | D dl:" << setprecision(3) << dl 
+                                                << " cm | Dpxd:" << setprecision(3) << dpxd << "cm";
                                 else buf    << "D(" << x_target[0] << "): " << dr[0]
                                             << " | D(" << x_target[1] << "): " << dr[1]
                                             << " | D(" << x_target[2] << "): " << dr[2];
                                 //int baseline = 0;
                                 //Size textsize = getTextSize(buf.str(), FONT_HERSHEY_PLAIN, 2.0, 1, &baseline);
                                 //baseline += 1;
-                                putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 0, 255), 1, LINE_AA);
+                                putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 1, LINE_AA);
                                 dr.clear();
                             }
 
@@ -399,19 +403,18 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
     {
         char c = (char)waitKey(delay);
         double t = (double)getTickCount();
-        // Get Image
-        image = ardrone.getImage();
-        undistort(image, flat_image, cameraMat, distCoefs);
-        // Calcluate blur level
-        double blurry = calculate_blur(flat_image);
-        cout << endl;
-        cout << "GETTING" << "  |  Blurry: " << blurry;
+        // Get Image, & Calculate Blur
+            image = ardrone.getImage();
+            undistort(image, flat_image, cameraMat, distCoefs);
+            imshow("LIVE", flat_image);
+            double blurry = calculate_blur(flat_image);
+            cout << endl;
+            cout << "GETTING" << "  |  Blurry: " << blurry;
         
-        //HOG Detecting
-        if(blurry >= blur_t) hog_detecting(hog, flat_image, &found);
-        cout << "  |  Found object: " << found.size();
-        //HOG Processing
-            nms(found, found_nms, 0.3f, 1);
+        //HOG Detecting & Processing
+            if(blurry >= blur_t) hog_detecting(hog, flat_image, &found);
+            cout << "  |  Found object: " << found.size();
+            nms(found, found_nms, 0.3f, 1); // NMS
             for(int i = 0; i < found_nms.size(); i++)
             {
                 Rect2d r = found_nms[i];
@@ -423,7 +426,6 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                     try 
                     {
                         crop_image2d(flat_image, target, r);
-                        //filter_target(target, r);
                         imshow("TARGET", target);
                         double target_blur = calculate_blur(target);
                         cout << "  |  Target Blurry: "<< target_blur << endl;
@@ -445,8 +447,6 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                 };
             }
 
-        imshow("LIVE", flat_image);
-
         if(done) break;
         else ardrone.move(0.0, 0.0, 1.0);
 
@@ -458,7 +458,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
 
         t = (((double)getTickCount() - t)*1000)/getTickFrequency();
         delay = 33.0 - t;
-        if(delay < 0) delay = 2;
+        if(delay < 0) delay = 1;
 
         // Failsafe
             if (c == 27)
@@ -542,6 +542,7 @@ void manual_control(ARDrone& ardrone)
 
 int main( int argc, char* argv[] )
 {
+    cout << "######\tARDRONE MF 6.1\t######\n";
     // Initialize Var
         Mat target, full_image;
         Rect2d target_pos;
@@ -558,7 +559,6 @@ int main( int argc, char* argv[] )
             else if (arg == "-i") calibfile = argv[i+1];
             else if (arg ==  "-g") gray = true;
         }
-        cout << "Received Params:\n" << "match_t: " << match_t << "  |  blur_t: " << blur_t << endl; 
     // Initialize DistCoefs, and Camera Mat
         if(calibfile == " ") return 1;
         FileStorage fs;
@@ -573,19 +573,22 @@ int main( int argc, char* argv[] )
     ARDrone ardrone;
     if( !ardrone.open() )
     {
-        std::cout << "***Could not initialize capturing...***\n";
-        std::cout << "Current parameter's value: \n";
+        std::cout << "***Could not initialize ARDRone...***\n";
         return -1;
     }
     help();
-
+    cout    << "Received Params:" 
+            << "\n\tmatch_t: " << match_t 
+            << "\n\tblur_t: " << blur_t
+            << "\n\tGS Proc: " << gray
+            << "\n\tHuman: " << human
+            << "\n\tCalibFile: " << calibfile << endl;
     Mat test = ardrone.getImage();
-    cout << "Original Spec: \t" <<test.size() << test.type() << endl;
     Mat test_undist;
     undistort(test, test_undist, cameraMat, distCoefs);
     imshow("Control", test_undist);
-    cout << "Undistort Spec: \t" <<test_undist.size() << test_undist.type() << endl;
-    cout << "ARDRONE MF 2\n";
+    cout << "\nOriginal Spec:\t" << test.size() << test.type() << endl;
+    cout << "\nUndistort Spec:\t" << test_undist.size() << test_undist.type() << endl;
 
     // Battery
     std::cout << "Battery = " << ardrone.getBatteryPercentage() << "\%" << std::endl;
