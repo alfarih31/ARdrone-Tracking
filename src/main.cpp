@@ -14,7 +14,7 @@ using namespace cv::xfeatures2d;
 int minHessian = 600;
 double kp = 0.1;
 double ki = 0.05;
-double kd = 0.0;
+double kd = 0.05;
 double blur_t=0, match_t=0;
 
 // Camera Const
@@ -211,6 +211,7 @@ void extract_target(Mat target, Mat& dsc)
     try
     {
         if(gray) cvtColor(target, target, COLOR_BGR2GRAY);
+        target.convertTo(target, CV_32F);
         Ptr<AKAZE> detector = AKAZE::create();
         detector -> setThreshold(3e-4);
         detector -> detectAndCompute(target, noArray(), kp, *_dsc);
@@ -233,6 +234,7 @@ bool image_matching(Mat detected, Mat dsc_target)
     try
     {
         if(gray) cvtColor(detected, detected, COLOR_BGR2GRAY);
+        detected.convertTo(detected, CV_32F);
 
         Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
         Ptr<AKAZE> detector = AKAZE::create();
@@ -300,8 +302,8 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         Mat last_full_image, detected_target, ff_image;
         full_image.copyTo(last_full_image);
 
-        bool ok = false, xd = false, yd = false;
-        int _ok = 0, n = 0, xp = 0, yp = 0;
+        bool ok = false, first = true;
+        int _ok = 0, n = 0;
         double  delay = 1, 
                 dpd, dl, 
                 sum = 0.0, 
@@ -321,7 +323,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         undistort(full_image, ff_image, cameraMat, distCoefs);
         imshow("LIVE", ff_image);
         double blurry = calculate_blur(ff_image);
-        cout <<"TRACKING" << "  |  Blurry: " << blurry << endl;
+        cout <<"\tTRACKING" << "  |  Blurry: " << blurry << endl;
         if(blurry >= blur_t)
         {
             try
@@ -335,7 +337,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                     {
                         n++;
                         sum += target_pos.width;
-                        if(n >= 5)
+                        if(n >= 0)
                         {
                             //Save last detected image
                             ff_image.copyTo(last_full_image);
@@ -345,37 +347,30 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                             calculate_distance(avg_width, dpd, dl, dr, x_target);
 
                             // PID Controller
+                                //ardrone.move3D(0.0, 0.0, 0.0, 0.0);
+                                
                                 double dt = (getTickCount() - temp_t)/getTickFrequency();
                                 temp_t = getTickCount();
-                                double cxt = target_pos.x + target_pos.width/2;
-                                double cyt = target_pos.y + target_pos.height/2;
-
-                                double erx = 320 - cxt; //320px is center x vertice of the image
-                                double ery = 240 - cyt; //240px is center y vertice of the image
-
-                                if(fabs(erx) > 40 && xp < 200)
+                                if(!first)
                                 {
+                                    double cxt = target_pos.x + target_pos.width/2;
+                                    double cyt = target_pos.y + target_pos.height/2;
+                                    double erx = 1.0 - cxt/320; //320px is center x vertice of the image
+                                    double ery = 1.0 - cyt/180; //180px is center y vertice of the image
+
+                                    cout << "\nerx: " << erx << " ery: " << ery << " dt: " << dt;
                                     ixe += erx * dt;
-                                    double delta = erx - perx;
-                                    if(fabs(delta) < 20) xp++;
-                                    double dxe = delta/dt;
-                                    double perx = erx;
-
-                                    double vr = erx*kp + ixe*ki + dxe*kd;
-                                    ardrone.move(0.0, 0.0, vr);
-                                } else xp = 0, xd = true;
-                                
-                                if((ery < -45.0 || ery > -30.0) && yp < 200 && xd)
-                                {
                                     iye += ery * dt;
-                                    double delta = erx - perx;
-                                    if(fabs(delta) < 20) yp++;
-                                    double dye = delta/dt;
+                                    double dye = (ery - pery)/dt;
+                                    double dxe = (erx - perx)/dt;
+                                    double perx = erx;
                                     double pery = ery;
-
-                                    double vz = ery*kp + iye*ki + dye * kd;
-                                    ardrone.move3D(0.0, 0.0, vz, 0.0);
-                                } else yp = 0, yd = true;
+                                    double vr = erx*kp + ixe*ki + dxe*kd;
+                                    double vz = ery*kp + iye*ki + dye*kd;
+                                    cout << "| vr: " << vr << " vz: " << vz << endl;
+                                    ardrone.move3D(0.0, 0.0, vz, vr);
+                                }
+                                first = false;
 
                             double dpxd = pxd/avg_width;
                             {
@@ -407,6 +402,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                     tracker = TrackerMedianFlow::create();
                     tracker -> init(last_full_image, last_target);
                     _ok = 0;
+                    first = true;
                 }
             }
             catch (exception)
@@ -420,12 +416,15 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
 
         if(delay < 0) delay = 1;
         if(c == 'r') break;
+        else if(c == 27) break;
+        else if(c == ' ') ardrone.landing();
     }
 }
 
 void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_pos)
 {
     Mat image, flat_image;
+    int count = 0;
     double delay = 1;
     bool done = false;
     vector<Rect> found, found_nms;
@@ -448,7 +447,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
         //HOG Detecting & Processing
             if(blurry >= blur_t) hog_detecting(hog, flat_image, &found);
             cout << "  |  Found object: " << found.size();
-            nms(found, found_nms, 0.3f, 1); // NMS
+            nms(found, found_nms, 0.2f, 1); // NMS
             for(int i = 0; i < found_nms.size(); i++)
             {
                 try
@@ -479,12 +478,17 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                 };
             }
         
-        imshow("LIVE", flat_image);
         if(done) break;
-        else ardrone.move(0.0, 0.0, 1.0);
+        else count++;
 
-        waitKey(100);
-        ardrone.move(0.0, 0.0, 0.0);
+        if(count > 30)
+        {
+            ardrone.move(0.0, 0.0, 1.0);
+            waitKey(100);
+            ardrone.move(0.0, 0.0, 0.0);
+            count = 0;
+        };
+        imshow("LIVE", flat_image);
 
         found.clear();
         found_nms.clear();
@@ -498,7 +502,8 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
             {
                 target.release();
                 break;
-            };
+            }
+            else if(c == ' ') ardrone.landing();
     }        
     return;
 }
@@ -563,9 +568,14 @@ void manual_control(ARDrone& ardrone)
         // Switch Control
             if(key == 's')
             {
-                get_target(ardrone, full_image, target, target_pos);
-                if(!target.empty() && !full_image.empty()) tracking_target(ardrone, full_image, target, target_pos);
-                else target.release(), full_image.release();
+                while(1)
+                {
+                    get_target(ardrone, full_image, target, target_pos);
+                    if(!target.empty() && !full_image.empty()) tracking_target(ardrone, full_image, target, target_pos);
+                    else target.release(), full_image.release();
+                    char k = (char)waitKey(33);
+                    if(k == 27) break;
+                }                
             }
             else if (key == 'n') maintain_alt(ardrone);
             else if (key == 27) break;
