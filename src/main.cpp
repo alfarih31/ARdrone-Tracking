@@ -65,7 +65,7 @@ void crop_image(Mat src,  Mat &cropped,  Rect& r)
 
     double ratio = r.height/r.width;
 
-    r.width =  r.width*0.75;
+    r.width =  r.width*0.7;
     r.height =  r.width * ratio;
 
     r.x = cx - r.width/2;
@@ -81,7 +81,7 @@ void crop_image2d(Mat src,  Mat &cropped,  Rect2d &r)
 
     double ratio = r.height/r.width;
 
-    r.width =  r.width*0.75;
+    r.width =  r.width*0.7;
     r.height =  r.width * ratio;
 
     r.x = cx - r.width/2;
@@ -296,7 +296,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         full_image.copyTo(last_full_image);
 
         bool ok = false;
-        int _show = 0, _ok = 0, n = 0;
+        int _ok = 0, n = 0;
         double delay = 1, dpd, dl, sum = 0.0;
         vector<double> x_target = {44.0, 46.5, 48.0}, dr;
     while(1)
@@ -330,26 +330,15 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
 
                             double avg_width = sum/n;
                             calculate_distance(avg_width, dpd, dl, dr, x_target);
-                            cout << "D pd:" << dpd << " | D dl:" << dl << endl;
-                            if(dr.size()>0)
-                            {
-                                for(int i = 0; i <= dr.size(); i++)
-                                {
-                                    cout << "D r (" << x_target[i] << "): " << dr[i] << endl;
-                                }
-                            }
                             double dpxd = pxd/avg_width;
                             {
                                 ostringstream buf;
-                                if(!human) buf  << "D pd:" << setprecision(3) << dpd 
-                                                << " cm | D dl:" << setprecision(3) << dl 
-                                                << " cm | Dpxd:" << setprecision(3) << dpxd << "cm";
+                                if(!human) buf  << "Dpd:" << setprecision(4) << dpd 
+                                                << " cm | Ddl:" << setprecision(4) << dl 
+                                                << " cm | Dpxd:" << setprecision(4) << dpxd << "cm";
                                 else buf    << "D(" << x_target[0] << "): " << dr[0]
                                             << " | D(" << x_target[1] << "): " << dr[1]
                                             << " | D(" << x_target[2] << "): " << dr[2];
-                                //int baseline = 0;
-                                //Size textsize = getTextSize(buf.str(), FONT_HERSHEY_PLAIN, 2.0, 1, &baseline);
-                                //baseline += 1;
                                 putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 1, LINE_AA);
                                 dr.clear();
                             }
@@ -390,8 +379,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
 void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_pos)
 {
     Mat image, flat_image;
-    double delay = 1, dpd, dl;
-    vector<double> x_target = {400, 425, 465, 480}, dr;
+    double delay = 1;
     bool done = false;
     vector<Rect> found, found_nms;
 
@@ -406,7 +394,6 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
         // Get Image, & Calculate Blur
             image = ardrone.getImage();
             undistort(image, flat_image, cameraMat, distCoefs);
-            imshow("LIVE", flat_image);
             double blurry = calculate_blur(flat_image);
             cout << endl;
             cout << "GETTING" << "  |  Blurry: " << blurry;
@@ -417,36 +404,35 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
             nms(found, found_nms, 0.3f, 1); // NMS
             for(int i = 0; i < found_nms.size(); i++)
             {
-                Rect2d r = found_nms[i];
-                double w = r.width;
-                double h = r.height;
-                double ratio = h/w;
-                if (ratio >= 1.61 && ratio <= 1.99) // Average Ratio of human body
+                try
                 {
-                    try 
+                    Rect2d r = found_nms[i];
+                    crop_image2d(flat_image, target, r);
+                    double w = r.width;
+                    double h = r.height;
+                    double ratio = h/w;
+                    target_env = flat_image;
+                    target_pos = r;
+                    rectangle(flat_image, r,  Scalar(255, 0, 0), 1, 1);
+                    if (ratio >= 1.25 && ratio <= 1.99)// Average Ratio of human body 
                     {
-                        crop_image2d(flat_image, target, r);
-                        imshow("TARGET", target);
                         double target_blur = calculate_blur(target);
                         cout << "  |  Target Blurry: "<< target_blur << endl;
                         if(target_blur*3 >= blur_t)
                         {
-                            rectangle(image, r.tl(), r.br(),  Scalar(255, 0, 0), 2);
-                            calculate_distance(r.width, dpd, dl, dr, x_target);
-                            target_env = flat_image;
-                            target_pos = r;
-
+                            imshow("TARGET", target);
                             done = true;
                             break;
                         }
-                    }
-                    catch(exception)
-                    {
-                        continue;
-                    }
+                    };
+                }
+                catch(exception)
+                {
+                    continue;
                 };
             }
-
+        
+        imshow("LIVE", flat_image);
         if(done) break;
         else ardrone.move(0.0, 0.0, 1.0);
 
@@ -599,9 +585,14 @@ int main( int argc, char* argv[] )
         else if (c == 'm') manual_control(ardrone);
         else if(c == 's')
         {
-            get_target(ardrone, full_image, target, target_pos);
-            if(!target.empty() && !full_image.empty()) tracking_target(ardrone, full_image, target, target_pos);
-            else target.release(), full_image.release();
+            while(1)
+            {
+                get_target(ardrone, full_image, target, target_pos);
+                if(!target.empty() && !full_image.empty()) tracking_target(ardrone, full_image, target, target_pos);
+                else target.release(), full_image.release();
+                char k = (char)waitKey(33);
+                if(k == 27) break;
+            }
         };
     }
     return 0;
