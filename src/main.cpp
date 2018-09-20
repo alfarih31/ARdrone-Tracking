@@ -279,6 +279,11 @@ double calculate_blur(Mat image)
     return double(dev.val[0]*dev.val[0]);
 }
 
+void reiniterror(double &e1, double &e2, double &e3, double &e4)
+{
+    e1 = 0.0, e2 = 0.0, e3 = 0.0, e4 = 0.0;
+}
+
 void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target_pos)
 {
     // INIT
@@ -295,9 +300,17 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         Mat last_full_image, detected_target, ff_image;
         full_image.copyTo(last_full_image);
 
-        bool ok = false;
-        int _ok = 0, n = 0;
-        double delay = 1, dpd, dl, sum = 0.0;
+        bool ok = false, xd = false, yd = false;
+        int _ok = 0, n = 0, xp = 0, yp = 0;
+        double  delay = 1, 
+                dpd, dl, 
+                sum = 0.0, 
+                dt = 0.0,
+                temp_t = 0.0,
+                ixe = 0.0,
+                perx = 0.0,
+                iye = 0.0,
+                pery = 0.0;
         vector<double> x_target = {44.0, 46.5, 48.0}, dr;
     while(1)
     {
@@ -330,6 +343,40 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
 
                             double avg_width = sum/n;
                             calculate_distance(avg_width, dpd, dl, dr, x_target);
+
+                            // PID Controller
+                                double dt = (getTickCount() - temp_t)/getTickFrequency();
+                                temp_t = getTickCount();
+                                double cxt = target_pos.x + target_pos.width/2;
+                                double cyt = target_pos.y + target_pos.height/2;
+
+                                double erx = 320 - cxt; //320px is center x vertice of the image
+                                double ery = 240 - cyt; //240px is center y vertice of the image
+
+                                if(fabs(erx) > 40 && xp < 200)
+                                {
+                                    ixe += erx * dt;
+                                    double delta = erx - perx;
+                                    if(fabs(delta) < 20) xp++;
+                                    double dxe = delta/dt;
+                                    double perx = erx;
+
+                                    double vr = erx*kp + ixe*ki + dxe*kd;
+                                    ardrone.move(0.0, 0.0, vr);
+                                } else xp = 0, xd = true;
+                                
+                                if((ery < -45.0 || ery > -30.0) && yp < 200 && xd)
+                                {
+                                    iye += ery * dt;
+                                    double delta = erx - perx;
+                                    if(fabs(delta) < 20) yp++;
+                                    double dye = delta/dt;
+                                    double pery = ery;
+
+                                    double vz = ery*kp + iye*ki + dye * kd;
+                                    ardrone.move3D(0.0, 0.0, vz, 0.0);
+                                } else yp = 0, yd = true;
+
                             double dpxd = pxd/avg_width;
                             {
                                 ostringstream buf;
@@ -481,8 +528,8 @@ void manual_control(ARDrone& ardrone)
                 double vx = 0.0, vy = 0.0, vr = 0.0, vz = 0.0;
                 if (key == 'i') vx = 1.0, new_key = true;
                 else if (key == 'k') vx = -1.0, new_key = true;
-                else if (key == 'u') vr =  1.0, new_key = true;
-                else if (key == 'o') vr = -1.0, new_key = true;
+                else if (key == 'u') vr =  1.0, new_key = true; //CCW
+                else if (key == 'o') vr = -1.0, new_key = true; //CW
                 else if (key == 'j') vy =  1.0, new_key = true;
                 else if (key == 'l') vy = -1.0, new_key = true;
                 else if (key == 'q') vz =  1.0, new_key = true;
