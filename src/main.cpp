@@ -358,9 +358,14 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                                     double erx = 1.0 - cxt/320; //320px is center x vertice of the image
                                     double ery = 1.0 - cyt/180; //180px is center y vertice of the image
 
-                                    cout << "\nerx: " << erx << " ery: " << ery << " dt: " << dt;
+                                    cout << "\ncxt: "<< cxt << "cyt: "<< cyt <<"erx: " << erx << " ery: " << ery << " dt: " << dt;
                                     ixe += erx * dt;
                                     iye += ery * dt;
+                                    if(ixe > 20.0) ixe = 20.0;
+                                    else if (ixe < -20.0) ixe = -20.0;
+
+                                    if(iye > 20.0) iye = 20.0;
+                                    else if (iye < -20.0) iye = -20.0;
                                     double dye = (ery - pery)/dt;
                                     double dxe = (erx - perx)/dt;
                                     double perx = erx;
@@ -390,9 +395,9 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                             n = 0;
                             sum = 0.0;
                         }
-                    } else ardrone.move3D(0.0, 0.0, 0.0, 0.0);
+                    } else ardrone.move3D(0.0, 0.0, 0.0, 0.0), temp_t = getTickCount();
                 }
-                else _ok++;
+                else _ok++, ardrone.move3D(0.0, 0.0, 0.0, 0.0), temp_t = getTickCount();
                 if(_ok > 3)
                 {
                     cout << "RE-INIT" << endl;
@@ -401,6 +406,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                     if(descriptors_target.empty()) return;
                     tracker = TrackerMedianFlow::create();
                     tracker -> init(last_full_image, last_target);
+                    ardrone.move3D(0.0, 0.0, 0.0, 0.0), temp_t = getTickCount();
                     _ok = 0;
                     first = true;
                 }
