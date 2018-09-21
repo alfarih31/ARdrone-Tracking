@@ -38,7 +38,7 @@ static void help()
 {
     // Instructions
     std::cout << "***************************************" << std::endl;
-    std::cout << "*       CV Drone sample program       *" << std::endl;
+    std::cout << "*       CV Drone manual control       *" << std::endl;
     std::cout << "*           - How to play -           *" << std::endl;
     std::cout << "***************************************" << std::endl;
     std::cout << "*                                     *" << std::endl;
@@ -197,7 +197,7 @@ void maintain_alt(ARDrone& ardrone)
             putText(image, status, Point((image.rows/2),(image.cols/2)), FONT_HERSHEY_PLAIN, 1.0, Scalar(0, 0, 255), 1, LINE_AA);
             putText(image, buf.str(), Point((image.rows/4),(image.cols/4)), FONT_HERSHEY_PLAIN, 1.0, Scalar(0, 0, 255), 1, LINE_AA);
             imshow("LIVE", image);
-        
+
         // Failsafe
             if (c == ' ') ardrone.landing(); //Super Panic
             else if (c == 'm') manual_control(ardrone);
@@ -304,9 +304,9 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
 
         bool ok = false, first = true;
         int _ok = 0, n = 0;
-        double  delay = 1, 
-                dpd, dl, 
-                sum = 0.0, 
+        double  delay = 1,
+                dpd, dl,
+                sum = 0.0,
                 dt = 0.0,
                 temp_t = 0.0,
                 ixe = 0.0,
@@ -348,8 +348,8 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
 
                             // PID Controller
                                 //ardrone.move3D(0.0, 0.0, 0.0, 0.0);
-                                
-                                double dt = (getTickCount() - temp_t)/getTickFrequency();
+
+                                double dt = ((getTickCount() - temp_t)*1000)/getTickFrequency();
                                 temp_t = getTickCount();
                                 if(!first)
                                 {
@@ -375,8 +375,8 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                             double dpxd = pxd/avg_width;
                             {
                                 ostringstream buf;
-                                if(!human) buf  << "Dpd:" << setprecision(4) << dpd 
-                                                << " cm | Ddl:" << setprecision(4) << dl 
+                                if(!human) buf  << "Dpd:" << setprecision(4) << dpd
+                                                << " cm | Ddl:" << setprecision(4) << dl
                                                 << " cm | Dpxd:" << setprecision(4) << dpxd << "cm";
                                 else buf    << "D(" << x_target[0] << "): " << dr[0]
                                             << " | D(" << x_target[1] << "): " << dr[1]
@@ -390,7 +390,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                             n = 0;
                             sum = 0.0;
                         }
-                    }
+                    } else ardrone.move3D(0.0, 0.0, 0.0, 0.0);
                 }
                 else _ok++;
                 if(_ok > 3)
@@ -443,7 +443,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
             double blurry = calculate_blur(flat_image);
             cout << endl;
             cout << "GETTING" << "  |  Blurry: " << blurry;
-        
+
         //HOG Detecting & Processing
             if(blurry >= blur_t) hog_detecting(hog, flat_image, &found);
             cout << "  |  Found object: " << found.size();
@@ -460,7 +460,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                     target_env = flat_image;
                     target_pos = r;
                     rectangle(flat_image, r,  Scalar(255, 0, 0), 1, 1);
-                    if (ratio >= 1.25 && ratio <= 1.99)// Average Ratio of human body 
+                    if (ratio >= 1.25 && ratio <= 1.99)// Average Ratio of human body
                     {
                         double target_blur = calculate_blur(target);
                         cout << "  |  Target Blurry: "<< target_blur << endl;
@@ -477,7 +477,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                     continue;
                 };
             }
-        
+
         if(done) break;
         else count++;
 
@@ -504,7 +504,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                 break;
             }
             else if(c == ' ') ardrone.landing();
-    }        
+    }
     return;
 }
 
@@ -575,7 +575,7 @@ void manual_control(ARDrone& ardrone)
                     else target.release(), full_image.release();
                     char k = (char)waitKey(33);
                     if(k == 27) break;
-                }                
+                }
             }
             else if (key == 'n') maintain_alt(ardrone);
             else if (key == 27) break;
@@ -620,8 +620,8 @@ int main( int argc, char* argv[] )
         return -1;
     }
     help();
-    cout    << "Received Params:" 
-            << "\n\tmatch_t: " << match_t 
+    cout    << "Received Params:"
+            << "\n\tmatch_t: " << match_t
             << "\n\tblur_t: " << blur_t
             << "\n\tGS Proc: " << gray
             << "\n\tHuman: " << human
