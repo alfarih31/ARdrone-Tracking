@@ -12,9 +12,10 @@ using namespace std;
 using namespace cv::xfeatures2d;
 
 int minHessian = 600;
-double kp = 0.1;
-double ki = 0.05;
-double kd = 0.05;
+// PID Coef
+    double kp = 0.1;
+    double ki = 0.05;
+    double kd = 0.05;
 double blur_t=0, match_t=0;
 
 // Camera Const
@@ -303,16 +304,19 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         full_image.copyTo(last_full_image);
 
         bool ok = false, first = true;
-        int _ok = 0, n = 0;
+        int _ok = 0, n = 0, count = 0;
         double  delay = 1,
                 dpd, dl,
                 sum = 0.0,
                 dt = 0.0,
                 temp_t = 0.0,
                 ixe = 0.0,
+                dxe = 0.0,
                 perx = 0.0,
                 iye = 0.0,
-                pery = 0.0;
+                dye = 0.0,
+                pery = 0.0,
+                ccount = 0.0;
         vector<double> x_target = {44.0, 46.5, 48.0}, dr;
     while(1)
     {
@@ -324,6 +328,8 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
         imshow("LIVE", ff_image);
         double blurry = calculate_blur(ff_image);
         cout <<"\tTRACKING" << "  |  Blurry: " << blurry << endl;
+        dt = ((getTickCount() - temp_t)*1000)/getTickFrequency();
+        temp_t = getTickCount();
         if(blurry >= blur_t)
         {
             try
@@ -335,70 +341,61 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                     bool show = image_matching(detected_target, descriptors_target);
                     if(show)
                     {
-                        n++;
-                        sum += target_pos.width;
-                        if(n >= 0)
-                        {
-                            //Save last detected image
+                        //Save last detected image
                             ff_image.copyTo(last_full_image);
                             last_target = target_pos;
+                            calculate_distance(target_pos.width, dpd, dl, dr, x_target);
 
-                            double avg_width = sum/n;
-                            calculate_distance(avg_width, dpd, dl, dr, x_target);
-
-                            // PID Controller
-                                //ardrone.move3D(0.0, 0.0, 0.0, 0.0);
-
-                                double dt = ((getTickCount() - temp_t)*1000)/getTickFrequency();
-                                temp_t = getTickCount();
-                                if(!first)
-                                {
-                                    double cxt = target_pos.x + target_pos.width/2;
-                                    double cyt = target_pos.y + target_pos.height/2;
-                                    double erx = 1.0 - cxt/320; //320px is center x vertice of the image
-                                    double ery = 1.0 - cyt/180; //180px is center y vertice of the image
-
-                                    cout << "\ncxt: "<< cxt << "cyt: "<< cyt <<"erx: " << erx << " ery: " << ery << " dt: " << dt;
-                                    ixe += erx * dt;
-                                    iye += ery * dt;
-                                    if(ixe > 20.0) ixe = 20.0;
-                                    else if (ixe < -20.0) ixe = -20.0;
-
-                                    if(iye > 20.0) iye = 20.0;
-                                    else if (iye < -20.0) iye = -20.0;
-                                    double dye = (ery - pery)/dt;
-                                    double dxe = (erx - perx)/dt;
-                                    double perx = erx;
-                                    double pery = ery;
-                                    double vr = erx*kp + ixe*ki + dxe*kd;
-                                    double vz = ery*kp + iye*ki + dye*kd;
-                                    cout << "| vr: " << vr << " vz: " << vz << endl;
-                                    ardrone.move3D(0.0, 0.0, vz, vr);
-                                }
-                                first = false;
-
-                            double dpxd = pxd/avg_width;
-                            {
-                                ostringstream buf;
-                                if(!human) buf  << "Dpd:" << setprecision(4) << dpd
-                                                << " cm | Ddl:" << setprecision(4) << dl
-                                                << " cm | Dpxd:" << setprecision(4) << dpxd << "cm";
-                                else buf    << "D(" << x_target[0] << "): " << dr[0]
-                                            << " | D(" << x_target[1] << "): " << dr[1]
-                                            << " | D(" << x_target[2] << "): " << dr[2];
-                                putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 1, LINE_AA);
-                                dr.clear();
-                            }
-
-                            rectangle(ff_image, target_pos, Scalar(0, 255, 0), 1, 1 );
-                            imshow("TRACKING", ff_image);
-                            n = 0;
-                            sum = 0.0;
+                        double dpxd = pxd/target_pos.width;
+                        {
+                            ostringstream buf;
+                            if(!human) buf  << "Dpd:" << setprecision(4) << dpd
+                                            << " cm | Ddl:" << setprecision(4) << dl
+                                            << " cm | Dpxd:" << setprecision(4) << dpxd << "cm";
+                            else buf    << "D(" << x_target[0] << "): " << dr[0]
+                                        << " | D(" << x_target[1] << "): " << dr[1]
+                                        << " | D(" << x_target[2] << "): " << dr[2];
+                            putText(ff_image, buf.str(), Point(1, ff_image.rows/2), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 1, LINE_AA);
+                            dr.clear();
                         }
-                    } else ardrone.move3D(0.0, 0.0, 0.0, 0.0), temp_t = getTickCount();
+
+                        rectangle(ff_image, target_pos, Scalar(0, 255, 0), 1, 1 );
+
+                        //Final Process of this Block
+                        imshow("TRACKING", ff_image);
+                        // PID Controller
+                        if(!first)
+                        {
+                            double cxt = (target_pos.x + target_pos.width/2)/10.0;
+                            double cyt = (target_pos.y + target_pos.height/2)/10.0;
+                            cxt = trunc(cxt)*10.0;
+                            cyt = trunc(cyt)*10.0;
+                            double erx = 1.0 - cxt/320; //320px is center x vertice of the image
+                            double ery = 1.0 - cyt/180; //180px is center y vertice of the image
+
+                            cout << "\ncxt: "<< cxt << "cyt: "<< cyt <<"erx: " << erx << " ery: " << ery << " dt: " << dt;
+                            ixe += (erx * dt);
+                            iye += (ery * dt);
+                            dye = (ery - pery)/dt;
+                            dxe = (erx - perx)/dt;
+                            perx = erx;
+                            pery = ery;
+                            if(count >= ccount)
+                            {
+                                double vr = erx*kp + ixe*ki + dxe*kd;
+                                double vz = ery*kp + iye*ki + dye*kd;
+                                ccount = 1/vr;
+                                ccount = round(fabs(ccount));
+                                cout << "| vr: " << vr << " vz: " << vz << endl;
+                                ardrone.move3D(0.0, 0.0, 0.0, vr);
+                                count = 0;
+                            } else count++;
+                        }
+                        first = false;
+                    } else ardrone.move3D(0.0, 0.0, 0.0, 0.0);
                 }
-                else _ok++, ardrone.move3D(0.0, 0.0, 0.0, 0.0), temp_t = getTickCount();
-                if(_ok > 3)
+                else _ok++, ardrone.move3D(0.0, 0.0, 0.0, 0.0);
+                if(_ok > 100)
                 {
                     cout << "RE-INIT" << endl;
                     Mat last_detected = last_full_image(last_target);
@@ -406,7 +403,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                     if(descriptors_target.empty()) return;
                     tracker = TrackerMedianFlow::create();
                     tracker -> init(last_full_image, last_target);
-                    ardrone.move3D(0.0, 0.0, 0.0, 0.0), temp_t = getTickCount();
+                    ardrone.move3D(0.0, 0.0, 0.0, 0.0);
                     _ok = 0;
                     first = true;
                 }
@@ -416,7 +413,7 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                 _ok++;
                 continue;
             }
-        }
+        } else ardrone.move3D(0.0, 0.0, 0.0, 0.0);
         t = (((double)getTickCount() - t)*1000)/getTickFrequency();
         delay = 33.0 - t;
 
@@ -466,7 +463,7 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
                     target_env = flat_image;
                     target_pos = r;
                     rectangle(flat_image, r,  Scalar(255, 0, 0), 1, 1);
-                    if (ratio >= 1.25 && ratio <= 1.99)// Average Ratio of human body
+                    if (ratio >= 1.0 && ratio <= 2.0)// Average Ratio of human body
                     {
                         double target_blur = calculate_blur(target);
                         cout << "  |  Target Blurry: "<< target_blur << endl;
@@ -489,8 +486,8 @@ void get_target(ARDrone &ardrone, Mat &target_env, Mat &target, Rect2d &target_p
 
         if(count > 30)
         {
-            ardrone.move(0.0, 0.0, 1.0);
-            waitKey(100);
+            ardrone.move(0.0, 0.0, 0.5);
+            waitKey(300);
             ardrone.move(0.0, 0.0, 0.0);
             count = 0;
         };
@@ -549,6 +546,7 @@ void manual_control(ARDrone& ardrone)
                 {
                     if(sent) 
                     {
+                        cout << ardrone.getYaw();
                         cout << "ZERO" << vx << vy << vz <<vr << endl;
                         ardrone.move3D(vx, vy, vz, vr);
                         sent = false;
@@ -560,9 +558,10 @@ void manual_control(ARDrone& ardrone)
                 if(!sent && new_key)
                 {
                     ardrone.move3D(vx, vy, vz, vr);
+                    cout << ardrone.getYaw();
                     cout << "SENT"<< vx << vy << vz <<vr;
                     sent = true;
-                };
+                } else if (new_key) cout << "press";
         // Change camera
             static int mode = 0;
             if (key == 'c') ardrone.setCamera(++mode % 4);
