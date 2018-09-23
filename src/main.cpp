@@ -389,6 +389,8 @@ void tracking_target(ARDrone &ardrone, Mat full_image, Mat target, Rect2d target
                                 cout << "| vr: " << vr << " vz: " << vz << endl;
                                 ardrone.move3D(0.0, 0.0, 0.0, vr);
                                 count = 0;
+                                ixe = 0.0;
+                                iye = 0.0;
                             } else count++;
                         }
                         first = false;
